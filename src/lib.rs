@@ -19,7 +19,7 @@ use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 use resvg::{
     tiny_skia::{PathSegment, Pixmap, Point},
-    usvg::{self, ImageKind, NodeKind, TreeParsing, TreeTextToPath},
+    usvg::{self, ImageKind, NodeKind, TreeParsing},
 };
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{
@@ -28,7 +28,6 @@ use wasm_bindgen::{
 };
 
 mod error;
-mod fonts;
 mod options;
 
 use error::Error;
@@ -156,15 +155,14 @@ impl Resvg {
             .filter_level(js_options.log_level)
             .try_init();
 
-        let (mut opts, fontdb) = js_options.to_usvg_options();
+        let mut opts = js_options.to_usvg_options();
         options::tweak_usvg_options(&mut opts);
         // Parse the SVG string into a tree.
-        let mut tree = match svg {
+        let tree = match svg {
             Either::A(a) => usvg::Tree::from_str(a.as_str(), &opts),
             Either::B(b) => usvg::Tree::from_data(b.as_ref(), &opts),
         }
         .map_err(|e| napi::Error::from_reason(format!("{e}")))?;
-        tree.convert_text(&fontdb);
         Ok(Resvg { tree, js_options })
     }
 
@@ -281,18 +279,18 @@ impl Resvg {
     pub fn new(
         svg: IStringOrBuffer,
         options: Option<String>,
-        custom_font_buffers: Option<js_sys::Array>,
+        _custom_font_buffers: Option<js_sys::Array>,
     ) -> Result<Resvg, js_sys::Error> {
         let js_options: JsOptions = options
             .and_then(|o| serde_json::from_str(o.as_str()).ok())
             .unwrap_or_default();
 
-        let (mut opts, mut fontdb) = js_options.to_usvg_options();
+        let mut opts = js_options.to_usvg_options();
 
-        crate::fonts::load_wasm_fonts(&js_options.font, custom_font_buffers, &mut fontdb)?;
+        // crate::fonts::load_wasm_fonts(&js_options.font, custom_font_buffers, &mut fontdb)?;
 
         options::tweak_usvg_options(&mut opts);
-        let mut tree = if js_sys::Uint8Array::instanceof(&svg) {
+        let tree = if js_sys::Uint8Array::instanceof(&svg) {
             let uintarray = js_sys::Uint8Array::unchecked_from_js_ref(&svg);
             let svg_buffer = uintarray.to_vec();
             usvg::Tree::from_data(&svg_buffer, &opts).map_err(Error::from)
@@ -301,7 +299,7 @@ impl Resvg {
         } else {
             Err(Error::InvalidInput)
         }?;
-        tree.convert_text(&fontdb);
+        // tree.convert_text(&fontdb);
         Ok(Resvg { tree, js_options })
     }
 
@@ -469,7 +467,7 @@ impl Resvg {
                 if let Some(stroke) = p.stroke.as_ref() {
                     if !no_stroke {
                         let mut style = StrokeStyle::default();
-                        style.line_width = stroke.width.get() as f32;
+                        style.line_width = stroke.width.get();
                         style.line_join = LineJoin::Miter(style.line_width);
                         style.line_cap = match stroke.linecap {
                             usvg::LineCap::Butt => LineCap::Butt,
@@ -535,7 +533,7 @@ impl Resvg {
     fn viewbox(&self) -> RectF {
         RectF::new(
             Vector2F::new(0.0, 0.0),
-            Vector2F::new(self.width() as f32, self.height() as f32),
+            Vector2F::new(self.width(), self.height()),
         )
     }
 
@@ -543,7 +541,7 @@ impl Resvg {
         let (width, height, transform) = self.js_options.fit_to.fit_to(self.tree.size)?;
         let mut pixmap = self.js_options.create_pixmap(width, height)?;
         // Render the tree
-        let _image = resvg::Tree::from_usvg(&self.tree).render(transform, &mut pixmap.as_mut());
+        resvg::Tree::from_usvg(&self.tree).render(transform, &mut pixmap.as_mut());
 
         // Crop the SVG
         let crop_rect = resvg::tiny_skia::IntRect::from_ltrb(
@@ -575,7 +573,7 @@ impl Resvg {
 
     fn resolve_image_inner(&self, href: String, buffer: Vec<u8>) -> Result<(), Error> {
         let resolver = usvg::ImageHrefResolver::default_data_resolver();
-        let (options, _) = self.js_options.to_usvg_options();
+        let options = self.js_options.to_usvg_options();
         let mime = MimeType::parse(&buffer)?.mime_type().to_string();
 
         for node in self.tree.root.descendants() {

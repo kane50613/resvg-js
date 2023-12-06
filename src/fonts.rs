@@ -14,9 +14,6 @@ use resvg::usvg::fontdb::{Family, Query, Source};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 
-#[cfg(target_arch = "wasm32")]
-use woff2::decode::{convert_woff2_to_ttf, is_woff2};
-
 /// Loads fonts.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn load_fonts(font_options: &JsFontOptions) -> Database {
@@ -66,12 +63,7 @@ pub fn load_wasm_fonts(
             let raw_font = font?;
             let font_data = raw_font.dyn_into::<js_sys::Uint8Array>()?.to_vec();
 
-            let font_buffer = if is_woff2(&font_data) {
-                convert_woff2_to_ttf(&mut std::io::Cursor::new(font_data)).unwrap()
-            } else {
-                font_data
-            };
-            fontdb.load_font_data(font_buffer);
+            fontdb.load_font_data(font_data);
         }
     }
 

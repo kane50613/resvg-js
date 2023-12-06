@@ -8,7 +8,6 @@ use crate::error::Error;
 #[cfg(not(target_arch = "wasm32"))]
 use napi::{bindgen_prelude::Buffer, Either};
 use resvg::tiny_skia::{Pixmap, Transform};
-use resvg::usvg::fontdb::Database;
 use resvg::usvg::{self, ImageHrefResolver, ImageKind, Options, TreeParsing};
 use serde::{Deserialize, Deserializer};
 
@@ -45,10 +44,7 @@ impl FitToDef {
         };
         let width = (width * scale).round().max(0.0) as u32;
         let height = (height * scale).round().max(0.0) as u32;
-        transform = transform.pre_scale(
-            width as f32 / size.width() as f32,
-            height as f32 / size.height() as f32,
-        );
+        transform = transform.pre_scale(width as f32 / size.width(), height as f32 / size.height());
         if width == 0 || height == 0 {
             Err(Error::ZeroSized)
         } else {
@@ -181,15 +177,9 @@ impl Default for JsOptions {
 }
 
 impl JsOptions {
-    pub(crate) fn to_usvg_options(&self) -> (usvg::Options, Database) {
-        // Load fonts
-        #[cfg(not(target_arch = "wasm32"))]
-        let fontdb = crate::fonts::load_fonts(&self.font);
-        #[cfg(target_arch = "wasm32")]
-        let fontdb = Database::new();
-
+    pub(crate) fn to_usvg_options(&self) -> usvg::Options {
         // Build the SVG options
-        let opts = usvg::Options {
+        usvg::Options {
             resources_dir: None,
             dpi: self.dpi,
             font_family: self.font.default_font_family.clone(),
@@ -200,8 +190,7 @@ impl JsOptions {
             image_rendering: self.image_rendering,
             default_size: usvg::Size::from_wh(100.0, 100.0).unwrap(),
             image_href_resolver: usvg::ImageHrefResolver::default(),
-        };
-        (opts, fontdb)
+        }
     }
 
     pub(crate) fn create_pixmap(&self, width: u32, height: u32) -> Result<Pixmap, Error> {
